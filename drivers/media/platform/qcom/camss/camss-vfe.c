@@ -977,6 +977,10 @@ static int vfe_set_clock_rates(struct vfe_device *vfe)
 								   l->nformats,
 								   l->fmt[MSM_VFE_PAD_SINK].code);
 					tmp = pixel_clock[j] * bpp / 64;
+                    /* Osprey full RAW overflows the WM at the computed ~80MHz. */
+                    if (vfe->camss->res->version == CAMSS_8x16 &&
+                        pixel_clock[j] && l->fmt[MSM_VFE_PAD_SINK].width >= 1920)
+                        tmp = max_t(u32, tmp, 160000000);
 				}
 
 				if (min_rate < tmp)
@@ -1058,6 +1062,10 @@ static int vfe_check_clock_rates(struct vfe_device *vfe)
 								   l->nformats,
 								   l->fmt[MSM_VFE_PAD_SINK].code);
 					tmp = pixel_clock[j] * bpp / 64;
+                    /* Osprey full RAW overflows the WM at the computed ~80MHz. */
+                    if (vfe->camss->res->version == CAMSS_8x16 &&
+                        pixel_clock[j] && l->fmt[MSM_VFE_PAD_SINK].width >= 1920)
+                        tmp = max_t(u32, tmp, 160000000);
 				}
 
 				if (min_rate < tmp)

@@ -3,6 +3,7 @@
 // Generated with linux-mdss-dsi-panel-driver-generator from vendor device tree:
 //   Copyright (c) 2013, The Linux Foundation. All rights reserved. (FIXME)
 
+#include <linux/backlight.h>
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/mod_devicetable.h>
@@ -21,6 +22,7 @@ struct inx_500_v0 {
 	struct mipi_dsi_device *dsi;
 	struct regulator_bulk_data *supplies;
 	struct gpio_desc *reset_gpio;
+	bool prepared;
 };
 
 static const struct regulator_bulk_data inx_500_v0_supplies[] = {
@@ -59,7 +61,7 @@ static int inx_500_v0_on(struct inx_500_v0 *ctx)
 	mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0xea, 0x09);
 	mipi_dsi_dcs_exit_sleep_mode_multi(&dsi_ctx);
 	mipi_dsi_msleep(&dsi_ctx, 120);
-	mipi_dsi_dcs_set_display_brightness_multi(&dsi_ctx, 0x00cf);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_SET_DISPLAY_BRIGHTNESS, 0xcf);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_WRITE_CONTROL_DISPLAY,
 				     0x2c);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_WRITE_POWER_SAVE, 0x01);
@@ -79,6 +81,22 @@ static int inx_500_v0_off(struct inx_500_v0 *ctx)
 
 	return dsi_ctx.accum_err;
 }
+
+static int inx_500_v0_backlight_update(struct backlight_device *bl)
+{
+ struct inx_500_v0 *ctx = bl_get_data(bl);
+ u8 brightness = backlight_get_brightness(bl);
+ ssize_t ret;
+ if (!ctx->prepared) return 0;
+ /* Osprey uses one 8-bit DCS brightness byte, as in Motorola 3.10. */
+ ret = mipi_dsi_dcs_write(ctx->dsi, MIPI_DCS_SET_DISPLAY_BRIGHTNESS,
+                          &brightness, sizeof(brightness));
+ return ret < 0 ? ret : 0;
+}
+
+static const struct backlight_ops inx_500_v0_backlight_ops = {
+ .update_status = inx_500_v0_backlight_update,
+};
 
 static int inx_500_v0_prepare(struct drm_panel *panel)
 {
@@ -102,6 +120,7 @@ static int inx_500_v0_prepare(struct drm_panel *panel)
 		return ret;
 	}
 
+	ctx->prepared = true;
 	return 0;
 }
 
@@ -111,6 +130,7 @@ static int inx_500_v0_unprepare(struct drm_panel *panel)
 	struct device *dev = &ctx->dsi->dev;
 	int ret;
 
+	ctx->prepared = false;
 	ret = inx_500_v0_off(ctx);
 	if (ret < 0)
 		dev_err(dev, "Failed to un-initialize panel: %d\n", ret);
@@ -153,6 +173,8 @@ static int inx_500_v0_probe(struct mipi_dsi_device *dsi)
 	struct device *dev = &dsi->dev;
 	struct inx_500_v0 *ctx;
 	int ret;
+	struct backlight_properties props = { .type = BACKLIGHT_RAW,
+		.max_brightness = 255, .brightness = 207 };
 
 	ctx = devm_drm_panel_alloc(dev, struct inx_500_v0, panel,
 				   &inx_500_v0_panel_funcs,
@@ -183,9 +205,10 @@ static int inx_500_v0_probe(struct mipi_dsi_device *dsi)
 
 	ctx->panel.prepare_prev_first = true;
 
-	ret = drm_panel_of_backlight(&ctx->panel);
-	if (ret)
-		return dev_err_probe(dev, ret, "Failed to get backlight\n");
+	ctx->panel.backlight = devm_backlight_device_register(dev, "osprey-backlight",
+		dev, ctx, &inx_500_v0_backlight_ops, &props);
+	if (IS_ERR(ctx->panel.backlight))
+		return PTR_ERR(ctx->panel.backlight);
 
 	drm_panel_add(&ctx->panel);
 

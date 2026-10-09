@@ -216,9 +216,9 @@ static int ak7375_probe(struct i2c_client *client)
 	if (ret < 0)
 		goto err_cleanup;
 
-	pm_runtime_set_active(&client->dev);
+	/* Probe has not enabled the supplies or touched the actuator. */
+	pm_runtime_set_suspended(&client->dev);
 	pm_runtime_enable(&client->dev);
-	pm_runtime_idle(&client->dev);
 
 	return 0;
 

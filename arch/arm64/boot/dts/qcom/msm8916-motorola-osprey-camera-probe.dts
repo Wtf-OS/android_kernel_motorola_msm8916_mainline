@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "msm8916-motorola-osprey-camera-id-probe.dts"
+/ {
+	model = "Motorola Moto G 2015 mainline camera streaming";
+};
+&camss {
+	status = "okay";
+	ports {
+		port@0 {
+			csiphy0_ep: endpoint {
+				/* Lane 1 is the clock lane on this PHY. */
+				data-lanes = <0 2 3 4>;
+				remote-endpoint = <&s5k3m2_ep>;
+			};
+		};
+	};
+};
+&cci { status = "okay"; };
+&rear_camera {
+	compatible = "samsung,s5k3m2";
+	port {
+		endpoint {
+			link-frequencies = /bits/ 64 <400000000 450000000 487000000 550000000 600000000>;
+			remote-endpoint = <&csiphy0_ep>;
+		};
+	};
+};
+
+&cci_i2c0 {
+    rear_lens: lens@c {
+        compatible = "asahi-kasei,ak7345";
+        reg = <0x0c>;
+        vdd-supply = <&pm8916_camera_vaf>;
+        vio-supply = <&pm8916_camera_vio>;
+    };
+};
+&rear_camera {
+    lens-focus = <&rear_lens>;
+};
+
+
+/ {
+    camera_vana: regulator-camera-vana {
+        compatible = "regulator-fixed";
+        regulator-name = "camera-vana";
+        gpio = <&tlmm 33 GPIO_ACTIVE_HIGH>;
+        enable-active-high;
+        startup-delay-us = <1000>;
+    };
+};
+&rear_camera {
+    /delete-property/ analog-enable-gpios;
+    vana-supply = <&camera_vana>;
+    orientation = <1>;
+    rotation = <90>;
+};
+&cci_i2c0 {
+    front_camera: front-camera@10 {
+        compatible = "samsung,s5k5e2";
+        assigned-clocks = <&gcc GCC_CAMSS_MCLK1_CLK>;
+        assigned-clock-rates = <23880000>;
+        vana-supply = <&camera_vana>;
+        avdd-supply = <&pm8916_camera_vaf>;
+        orientation = <0>;
+        rotation = <270>;
+        port {
+            s5k5e2_ep: endpoint {
+                data-lanes = <0 2>;
+                link-frequencies = /bits/ 64 <450000000>;
+                remote-endpoint = <&csiphy1_ep>;
+            };
+        };
+    };
+};
+&camss {
+    ports {
+        port@1 {
+            csiphy1_ep: endpoint {
+                data-lanes = <0 2>;
+                remote-endpoint = <&s5k5e2_ep>;
+            };
+        };
+    };
+};
+
+&cci_i2c0 {
+    flash@37 {
+        compatible = "skyworks,sky81296";
+        reg = <0x37>;
+        enable-gpios = <&tlmm 32 GPIO_ACTIVE_HIGH>;
+    };
+};

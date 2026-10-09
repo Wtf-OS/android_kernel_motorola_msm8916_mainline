@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "msm8916-motorola-osprey.dts"
+
+/ {
+    reserved-memory {
+        // TWRP 3.10 reads its console at 0xaf020000 (256 KiB).
+        ramoops@af000000 {
+            compatible = "ramoops";
+            reg = <0x0 0xaf000000 0x0 0x60000>;
+            record-size = <0x20000>;
+            console-size = <0x40000>;
+            ecc-size = <0>;
+        };
+        twrp-annotation@af060000 {
+            reg = <0x0 0xaf060000 0x0 0x20000>;
+            no-map;
+        };
+    };
+};
+
+&gpu { status = "disabled"; };
+&mdss { status = "disabled"; };
+&venus { status = "disabled"; };
+&wcnss { status = "disabled"; };

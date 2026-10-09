@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "msm8916-motorola-osprey-probe.dts"
+&gpu { status = "okay"; };
+&mdss { status = "okay"; };
+&mdss_dsi0 {
+    panel@0 { compatible = "motorola,osprey-panel-inx"; };
+};

@@ -756,6 +756,16 @@ config VIDEO_S5C73M3
 	  This is a V4L2 sensor driver for Samsung S5C73M3
 	  8 Mpixel camera.
 
+config VIDEO_S5K3M2
+	tristate "Samsung S5K3M2 sensor support"
+	select V4L2_CCI_I2C
+	help
+	  This is a V4L2 sensor driver for Samsung S5K3M2 13MP raw
+	  camera sensor (Motorola Moto G 2015 rear camera).
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called s5k3m2.
+
 config VIDEO_S5K3M5
 	tristate "Samsung S5K3M5 sensor support"
 	select V4L2_CCI_I2C
@@ -1764,3 +1774,15 @@ config VIDEO_MAX96717
 endmenu
 
 endif # VIDEO_DEV
+
+config VIDEO_OSPREY_CAMERA_ID
+ tristate "Motorola Osprey sensor ID diagnostic"
+ depends on I2C && GPIOLIB && COMMON_CLK
+ help
+   Power the known Osprey sensors, read their IDs, then power them down.
+   Diagnostic only; this does not implement V4L2 capture or register writes.
+
+config VIDEO_S5K5E2
+    tristate "Osprey Samsung S5K5E2 front sensor"
+    depends on I2C && VIDEO_DEV
+    select V4L2_CCI_I2C

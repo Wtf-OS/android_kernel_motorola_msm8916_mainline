@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/export.h>
+#include <linux/ktime.h>
+#include <linux/moduleparam.h>
+#include <linux/ftrace.h>
 #include <linux/slab.h>
 
 #include <drm/drm_atomic.h>
@@ -17,6 +20,10 @@
 #include <drm/drm_probe_helper.h>
 
 #include "drm_sysfb_helper.h"
+
+/* Diagnostic only: leave framebuffer timing and contents unchanged. */
+static bool profile_blit;
+module_param_named(profile_blit, profile_blit, bool, 0600);
 
 struct drm_display_mode drm_sysfb_mode(unsigned int width,
 				       unsigned int height,
@@ -343,6 +350,9 @@ void drm_sysfb_plane_helper_atomic_update(struct drm_plane *plane, struct drm_at
 	struct drm_atomic_helper_damage_iter iter;
 	struct drm_rect damage;
 	int ret, idx;
+	bool profile = READ_ONCE(profile_blit);
+	u64 start_ns = profile ? ktime_get_ns() : 0;
+	u64 blit_ns = 0, pixels = 0;
 
 	ret = drm_gem_fb_begin_cpu_access(fb, DMA_FROM_DEVICE);
 	if (ret)
@@ -355,18 +365,27 @@ void drm_sysfb_plane_helper_atomic_update(struct drm_plane *plane, struct drm_at
 	drm_atomic_for_each_plane_damage(&iter, &damage) {
 		struct iosys_map dst = sysfb->fb_addr;
 		struct drm_rect dst_clip = plane_state->dst;
+		u64 blit_start;
 
 		if (!drm_rect_intersect(&dst_clip, &damage))
 			continue;
 
 		iosys_map_incr(&dst, drm_fb_clip_offset(dst_pitch, dst_format, &dst_clip));
+		blit_start = profile ? ktime_get_ns() : 0;
 		blit_to_crtc(&dst, &dst_pitch, shadow_plane_state->data, fb, &damage,
 			     &shadow_plane_state->fmtcnv_state);
+		if (profile) {
+			blit_ns += ktime_get_ns() - blit_start;
+			pixels += (u64)drm_rect_width(&damage) * drm_rect_height(&damage);
+		}
 	}
 
 	drm_dev_exit(idx);
 out_drm_gem_fb_end_cpu_access:
 	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
+	if (profile)
+		trace_printk("sysfb_blit fb=%u blit_ns=%llu total_ns=%llu pixels=%llu\n",
+			     fb->base.id, blit_ns, ktime_get_ns() - start_ns, pixels);
 }
 EXPORT_SYMBOL(drm_sysfb_plane_helper_atomic_update);
 

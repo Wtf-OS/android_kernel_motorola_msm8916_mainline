@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "msm8916-motorola-osprey-native-audio-probe.dts"
+/ {
+ model = "Motorola Moto G 2015 mainline camera identification";
+};
+&pm8916_rpm_regulators {
+ pm8916_camera_vio: l10 {
+  regulator-min-microvolt = <1800000>;
+  regulator-max-microvolt = <1800000>;
+ };
+ pm8916_camera_vaf: l17 {
+  regulator-min-microvolt = <2850000>;
+  regulator-max-microvolt = <2850000>;
+ };
+};
+&cci { status = "okay"; };
+&cci_i2c0 {
+ rear_camera: rear-camera@2d {
+  compatible = "motorola,osprey-camera-id";
+  reg = <0x2d>;
+  clocks = <&gcc GCC_CAMSS_MCLK0_CLK>;
+  assigned-clocks = <&gcc GCC_CAMSS_MCLK0_CLK>;
+  assigned-clock-rates = <23880000>;
+  reset-gpios = <&tlmm 35 GPIO_ACTIVE_LOW>;
+  analog-enable-gpios = <&tlmm 33 GPIO_ACTIVE_HIGH>;
+  digital-enable-gpios = <&tlmm 81 GPIO_ACTIVE_HIGH>;
+  vio-supply = <&pm8916_camera_vio>;
+  vaf-supply = <&pm8916_camera_vaf>;
+  pinctrl-names = "default";
+  pinctrl-0 = <&osprey_camera_rear>;
+  port {
+   s5k3m2_ep: endpoint {
+    /* Remote side is wired in the camera-probe tree; the standalone
+     * ID tree leaves it unconnected. Lane 1 is the clock lane. */
+    data-lanes = <0 2 3 4>;
+   };
+  };
+ };
+ front-camera@10 {
+  compatible = "motorola,osprey-camera-id";
+  reg = <0x10>;
+  clocks = <&gcc GCC_CAMSS_MCLK1_CLK>;
+  reset-gpios = <&tlmm 28 GPIO_ACTIVE_LOW>;
+  digital-enable-gpios = <&tlmm 79 GPIO_ACTIVE_HIGH>;
+  vio-supply = <&pm8916_camera_vio>;
+  pinctrl-names = "default";
+  pinctrl-0 = <&osprey_camera_front>;
+ };
+};
+&tlmm {
+ osprey_camera_rear: osprey-camera-rear-state {
+  mclk-pins {
+   pins = "gpio26";
+   function = "cam_mclk0";
+   drive-strength = <2>;
+   bias-disable;
+  };
+  control-pins {
+   pins = "gpio33", "gpio35", "gpio81";
+   function = "gpio";
+   drive-strength = <2>;
+   bias-disable;
+  };
+ };
+ osprey_camera_front: osprey-camera-front-state {
+  mclk-pins {
+   pins = "gpio27";
+   function = "cam_mclk1";
+   drive-strength = <2>;
+   bias-disable;
+  };
+  control-pins {
+   pins = "gpio28", "gpio79";
+   function = "gpio";
+   drive-strength = <2>;
+   bias-disable;
+  };
+ };
+};

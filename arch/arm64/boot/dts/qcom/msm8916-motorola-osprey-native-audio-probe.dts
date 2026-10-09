@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "msm8916-motorola-osprey-native-wifi-probe.dts"
+#include <dt-bindings/sound/apq8016-lpass.h>
+&blsp_i2c1 {
+ fan_charger: charger@6b {
+  compatible = "fairchild,fan54046-monitor";
+  reg = <0x6b>;
+ };
+ battery@36 { power-supplies = <&fan_charger>; };
+};
+&mpss { status = "disabled"; };
+&apr { status = "disabled"; };
+&bam_dmux { status = "disabled"; };
+&lpass { status = "okay"; };
+&sound {
+ compatible = "qcom,apq8016-sbc-sndcard";
+ model = "osprey-mainline";
+ /delete-node/ frontend0-dai-link;
+ /delete-node/ frontend1-dai-link;
+ /delete-node/ frontend2-dai-link;
+ /delete-node/ frontend3-dai-link;
+ /delete-node/ frontend4-dai-link;
+ /delete-node/ backend0-dai-link;
+ /delete-node/ backend1-dai-link;
+ primary-dai-link {
+  link-name = "WCD";
+  cpu { sound-dai = <&lpass MI2S_PRIMARY>; };
+  codec { sound-dai = <&lpass_codec 0>, <&pm8916_codec 0>; };
+ };
+ tertiary-dai-link {
+  link-name = "WCD-Capture";
+  cpu { sound-dai = <&lpass MI2S_TERTIARY>; };
+  codec { sound-dai = <&lpass_codec 1>, <&pm8916_codec 1>; };
+ };
+};

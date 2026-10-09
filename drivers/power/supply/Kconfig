@@ -1144,4 +1144,10 @@ config FUEL_GAUGE_MM8013
 	  the state of charge, temperature, cycle count, actual and design
 	  capacity, etc.
 
+config CHARGER_FAN54046_MONITOR
+	tristate "FAN54046/FAN54053 read-only status monitor"
+	depends on I2C
+	help
+	  Report USB availability and charging state without changing regulation.
+
 endif # POWER_SUPPLY

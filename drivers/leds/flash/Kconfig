@@ -145,3 +145,9 @@ config LEDS_TPS6131X
 	  This driver can be built as a module, it will be called "leds-tps6131x".
 
 endif # LEDS_CLASS_FLASH
+
+config LEDS_SKY81296
+	tristate "Osprey SKY81296 flash"
+	depends on I2C && GPIOLIB
+	select REGMAP_I2C
+	select LEDS_CLASS_FLASH

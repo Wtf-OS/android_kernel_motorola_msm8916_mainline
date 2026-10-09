@@ -128,10 +128,16 @@ static int qcom_usb_hs_phy_power_on(struct phy *phy)
 	if (ret)
 		goto err_1p8;
 
-	ret = regulator_set_voltage_triplet(uphy->v3p3, 3050000, 3300000,
-					    3300000);
-	if (ret)
-		goto err_3p3;
+	/* Fixed supplies, such as osprey L13 at 3.075 V, cannot change
+	 * voltage. Keep an existing voltage within the PHY's valid range.
+	 */
+	ret = regulator_get_voltage(uphy->v3p3);
+	if (ret < 3050000 || ret > 3300000) {
+		ret = regulator_set_voltage_triplet(uphy->v3p3, 3050000, 3300000,
+						    3300000);
+		if (ret)
+			goto err_3p3;
+	}
 
 	ret = regulator_set_load(uphy->v3p3, 50000);
 	if (ret < 0)
