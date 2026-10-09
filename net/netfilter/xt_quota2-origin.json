@@ -1,0 +1,8 @@
+{
+  "repository": "https://android.googlesource.com/kernel/common",
+  "commit": "caf46ff7514c908829071c455c887fca6aa5c143",
+  "sha256": {
+    "net/netfilter/xt_quota2.c": "f3875f26c6200c7fc6a8e0551cd12808dff901adce999c215634192b88a6a94d",
+    "include/linux/netfilter/xt_quota2.h": "b61e0c65914a21a1d31b4df339c949439885fc609bdd5625aa573b1d509298cc"
+  }
+}

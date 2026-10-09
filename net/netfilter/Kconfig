@@ -1672,3 +1672,11 @@ endmenu
 source "net/netfilter/ipset/Kconfig"
 
 source "net/netfilter/ipvs/Kconfig"
+
+config NETFILTER_XT_MATCH_QUOTA2
+	tristate "Android named quota match"
+	depends on NETFILTER_XTABLES && PROC_FS
+
+config NETFILTER_XT_MATCH_QUOTA2_LOG
+	bool "Android quota netlink alerts"
+	depends on NETFILTER_XT_MATCH_QUOTA2
