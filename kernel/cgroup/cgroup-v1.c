@@ -521,7 +521,11 @@ static ssize_t __cgroup1_procs_write(struct kernfs_open_file *of,
 	 */
 	cred = of->file->f_cred;
 	tcred = get_task_cred(task);
+	/* Android system services schedule app tasks using CAP_SYS_NICE. */
 	if (!uid_eq(cred->euid, GLOBAL_ROOT_UID) &&
+	    !((uid_eq(cred->euid, KUIDT_INIT(1000)) ||
+	       uid_eq(cred->euid, KUIDT_INIT(1069))) &&
+	      file_ns_capable(of->file, &init_user_ns, CAP_SYS_NICE)) &&
 	    !uid_eq(cred->euid, tcred->uid) &&
 	    !uid_eq(cred->euid, tcred->suid))
 		ret = -EACCES;
