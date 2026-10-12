@@ -212,6 +212,17 @@ static int mdp5_plane_atomic_check_with_state(struct drm_crtc_state *crtc_state,
 	if (ret)
 		return ret;
 
+	/* Resume restores saved plane state without its released global pipe. */
+	if (mdp5_state->hwpipe) {
+		struct mdp5_global_state *global = mdp5_get_global_state(state->state);
+
+		if (IS_ERR(global))
+			return PTR_ERR(global);
+		if (!global->hwpipe.hwpipe_to_plane[mdp5_state->hwpipe->idx]) {
+			mdp5_state->hwpipe = NULL;
+			mdp5_state->r_hwpipe = NULL;
+		}
+	}
 	if (plane_enabled(state)) {
 		unsigned int rotation;
 		const struct msm_format *format;

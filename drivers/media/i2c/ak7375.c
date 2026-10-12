@@ -309,6 +309,7 @@ static int __maybe_unused ak7375_vcm_resume(struct device *dev)
 			       cdef->mode_active, 1);
 	if (ret) {
 		dev_err(dev, "%s I2C failure: %d\n", __func__, ret);
+		regulator_bulk_disable(ARRAY_SIZE(ak7375_supply_names), ak7375_dev->supplies);
 		return ret;
 	}
 
@@ -336,7 +337,7 @@ static const struct of_device_id ak7375_of_table[] = {
 MODULE_DEVICE_TABLE(of, ak7375_of_table);
 
 static const struct dev_pm_ops ak7375_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(ak7375_vcm_suspend, ak7375_vcm_resume)
+	SET_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend, pm_runtime_force_resume)
 	SET_RUNTIME_PM_OPS(ak7375_vcm_suspend, ak7375_vcm_resume, NULL)
 };
 

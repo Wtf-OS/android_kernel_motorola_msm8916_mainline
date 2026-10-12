@@ -79,7 +79,16 @@
 };
 
 &blsp_i2c6 {
-	/* magnetometer@c */
+    status = "okay";
+    magnetometer@c {
+        compatible = "asahi-kasei,ak09912";
+        reg = <0x0c>;
+        reset-gpios = <&tlmm 90 GPIO_ACTIVE_LOW>;
+        interrupts-extended = <&tlmm 50 IRQ_TYPE_EDGE_RISING>;
+        vdd-supply = <&pm8916_l17>;
+        vid-supply = <&pm8916_l6>;
+        mount-matrix = "-1", "0", "0", "0", "1", "0", "0", "0", "-1";
+    };
 };
 
 &gpu {
@@ -88,6 +97,11 @@
 
 &mdss {
 	status = "okay";
+};
+
+&mdss_mdp {
+	interconnects = <&snoc MASTER_MDP_PORT0 &bimc SLAVE_EBI_CH0>;
+	interconnect-names = "mdp0-mem";
 };
 
 &mdss_dsi0 {
@@ -208,4 +222,22 @@
 		power-source = <PM8916_GPIO_L2>;
 		bias-disable;
 	};
+};
+
+&blsp_spi3 {
+    status = "okay";
+    cs-gpios = <&tlmm 10 GPIO_ACTIVE_LOW>;
+    sensorhub@0 {
+        compatible = "motorola,stml0xx-accel";
+        reg = <0>;
+        spi-max-frequency = <4000000>;
+        ready-gpios = <&tlmm 4 GPIO_ACTIVE_HIGH>;
+        ack-gpios = <&tlmm 38 GPIO_ACTIVE_HIGH>;
+        reset-gpios = <&tlmm 120 GPIO_ACTIVE_HIGH>;
+        boot-gpios = <&tlmm 121 GPIO_ACTIVE_HIGH>;
+        wake-gpios = <&tlmm 116 GPIO_ACTIVE_HIGH>;
+        wakeirq-gpios = <&tlmm 52 GPIO_ACTIVE_HIGH>;
+        sensor1-supply = <&pm8916_l6>;
+        sensor2-supply = <&pm8916_l17>;
+    };
 };

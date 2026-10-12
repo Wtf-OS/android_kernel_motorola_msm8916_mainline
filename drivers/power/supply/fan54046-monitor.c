@@ -6,6 +6,7 @@
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
 #include <linux/pm_wakeup.h>
+#include <linux/pm.h>
 
 static bool control_charging;
 module_param(control_charging, bool, 0444);
@@ -28,7 +29,8 @@ struct fan_monitor {
  struct delayed_work work;
  int last_online, last_status;
  struct fan5404x_chg charge;
- bool configured, awake;
+ bool configured, awake, suspended;
+ struct mutex pm_lock;
 };
 
 /* The legacy ADC/health notifier is replaced by MAX17050 properties.
@@ -110,7 +112,10 @@ static int fan_get_property(struct power_supply *psy, enum power_supply_property
  union power_supply_propval *val)
 {
  struct fan_monitor *fan = power_supply_get_drvdata(psy);
- int online, status, ret = fan_read_status(fan, &online, &status);
+ int online, status, ret;
+ mutex_lock(&fan->pm_lock);
+ ret = fan->suspended ? -EAGAIN : fan_read_status(fan, &online, &status);
+ mutex_unlock(&fan->pm_lock);
  if (ret) return ret;
  switch (prop) {
  case POWER_SUPPLY_PROP_ONLINE: val->intval = online; return 0;
@@ -130,6 +135,7 @@ static void fan_poll(struct work_struct *work)
 {
  struct fan_monitor *fan = container_of(to_delayed_work(work), struct fan_monitor, work);
  int online, status, ret;
+ mutex_lock(&fan->pm_lock);
  ret = fan_read_status(fan, &online, &status);
  if (!ret) ret = fan_control(fan, online);
  if (ret) {
@@ -142,6 +148,7 @@ static void fan_poll(struct work_struct *work)
   power_supply_changed(fan->psy);
  }
  schedule_delayed_work(&fan->work, msecs_to_jiffies(5000));
+ mutex_unlock(&fan->pm_lock);
 }
 static void fan_cancel(void *data)
 {
@@ -175,6 +182,8 @@ static int fan_probe(struct i2c_client *client)
  fan->charge.ic_info_pn = FAN54053; fan->charge.chg_enabled = true;
  fan->charge.voreg_mv = 4350; fan->charge.ext_temp_volt_mv = 4200;
  mutex_init(&fan->charge.read_write_lock);
+ mutex_init(&fan->pm_lock);
+ i2c_set_clientdata(client, fan);
  if (control_charging) {
   ret = device_init_wakeup(&client->dev, true);
   if (ret) return ret;
@@ -193,6 +202,33 @@ static int fan_probe(struct i2c_client *client)
  dev_info(&client->dev, "FAN5404x ID %#x; Motorola charging control=%d\n", id, control_charging);
  return 0;
 }
+static int fan_suspend(struct device *dev)
+{
+ struct fan_monitor *fan = dev_get_drvdata(dev);
+ int ret = 0;
+ cancel_delayed_work_sync(&fan->work);
+ mutex_lock(&fan->pm_lock);
+ /* No temperature monitor during suspend: stop charging before I2C sleeps. */
+ if (control_charging) ret = fan5404x_temp_charging(&fan->charge, 0);
+ if (!ret) {
+  fan->configured = false;
+  fan->suspended = true;
+  if (fan->awake) { pm_relax(dev); fan->awake = false; }
+ }
+ mutex_unlock(&fan->pm_lock);
+ if (ret) schedule_delayed_work(&fan->work, 0);
+ return ret;
+}
+static int fan_resume(struct device *dev)
+{
+ struct fan_monitor *fan = dev_get_drvdata(dev);
+ mutex_lock(&fan->pm_lock);
+ fan->suspended = false;
+ mutex_unlock(&fan->pm_lock);
+ schedule_delayed_work(&fan->work, 0);
+ return 0;
+}
+static DEFINE_SIMPLE_DEV_PM_OPS(fan_pm_ops, fan_suspend, fan_resume);
 static const struct of_device_id fan_of[] = {
  { .compatible = "fairchild,fan54046-monitor" }, {},
 };
@@ -200,7 +236,7 @@ MODULE_DEVICE_TABLE(of, fan_of);
 static const struct i2c_device_id fan_ids[] = { { "fan54046-monitor", 0 }, {} };
 MODULE_DEVICE_TABLE(i2c, fan_ids);
 static struct i2c_driver fan_driver = {
- .driver = { .name = "fan54046-monitor", .of_match_table = fan_of },
+ .driver = { .name = "fan54046-monitor", .of_match_table = fan_of, .pm = pm_sleep_ptr(&fan_pm_ops) },
  .probe = fan_probe, .id_table = fan_ids,
 };
 module_i2c_driver(fan_driver);

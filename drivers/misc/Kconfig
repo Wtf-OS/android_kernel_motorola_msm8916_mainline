@@ -660,4 +660,11 @@ source "drivers/misc/mchp_pci1xxxx/Kconfig"
 source "drivers/misc/keba/Kconfig"
 source "drivers/misc/amd-sbi/Kconfig"
 source "drivers/misc/rp1/Kconfig"
+config STML0XX_ACCEL
+    tristate "Motorola STML0xx sensorhub accelerometer"
+    depends on SPI && GPIOLIB && REGULATOR && OF
+    help
+      Read the Osprey accelerometer through the existing sensorhub firmware.
+      Reads accelerometer, ambient light and proximity without programming sensorhub flash.
+
 endmenu

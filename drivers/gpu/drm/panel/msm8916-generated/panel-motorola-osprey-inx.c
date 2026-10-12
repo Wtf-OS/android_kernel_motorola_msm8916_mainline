@@ -61,12 +61,11 @@ static int inx_500_v0_on(struct inx_500_v0 *ctx)
 	mipi_dsi_generic_write_seq_multi(&dsi_ctx, 0xea, 0x09);
 	mipi_dsi_dcs_exit_sleep_mode_multi(&dsi_ctx);
 	mipi_dsi_msleep(&dsi_ctx, 120);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_SET_DISPLAY_BRIGHTNESS, 0xcf);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_SET_DISPLAY_BRIGHTNESS, 0x00);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_WRITE_CONTROL_DISPLAY,
 				     0x2c);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_WRITE_POWER_SAVE, 0x01);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_SET_ADDRESS_MODE, 0x03);
-	mipi_dsi_dcs_set_display_on_multi(&dsi_ctx);
 
 	return dsi_ctx.accum_err;
 }
@@ -84,14 +83,17 @@ static int inx_500_v0_off(struct inx_500_v0 *ctx)
 
 static int inx_500_v0_backlight_update(struct backlight_device *bl)
 {
- struct inx_500_v0 *ctx = bl_get_data(bl);
- u8 brightness = backlight_get_brightness(bl);
- ssize_t ret;
- if (!ctx->prepared) return 0;
- /* Osprey uses one 8-bit DCS brightness byte, as in Motorola 3.10. */
- ret = mipi_dsi_dcs_write(ctx->dsi, MIPI_DCS_SET_DISPLAY_BRIGHTNESS,
-                          &brightness, sizeof(brightness));
- return ret < 0 ? ret : 0;
+	struct inx_500_v0 *ctx = bl_get_data(bl);
+	u8 brightness = backlight_get_brightness(bl);
+	ssize_t ret;
+
+	if (!ctx->prepared)
+		return 0;
+
+	/* Osprey uses one 8-bit DCS brightness byte, as in Motorola 3.10. */
+	ret = mipi_dsi_dcs_write(ctx->dsi, MIPI_DCS_SET_DISPLAY_BRIGHTNESS,
+				&brightness, sizeof(brightness));
+	return ret < 0 ? ret : 0;
 }
 
 static const struct backlight_ops inx_500_v0_backlight_ops = {
@@ -124,6 +126,14 @@ static int inx_500_v0_prepare(struct drm_panel *panel)
 	return 0;
 }
 
+static int inx_500_v0_enable(struct drm_panel *panel)
+{
+	struct inx_500_v0 *ctx = to_inx_500_v0(panel);
+
+	/* Keep the panel dark until the DSI video host is enabled. */
+	return mipi_dsi_dcs_set_display_on(ctx->dsi);
+}
+
 static int inx_500_v0_unprepare(struct drm_panel *panel)
 {
 	struct inx_500_v0 *ctx = to_inx_500_v0(panel);
@@ -135,6 +145,8 @@ static int inx_500_v0_unprepare(struct drm_panel *panel)
 	if (ret < 0)
 		dev_err(dev, "Failed to un-initialize panel: %d\n", ret);
 
+	/* Motorola holds reset deasserted for 101 ms after entering sleep. */
+	msleep(101);
 	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
 	regulator_bulk_disable(ARRAY_SIZE(inx_500_v0_supplies), ctx->supplies);
 
@@ -164,6 +176,7 @@ static int inx_500_v0_get_modes(struct drm_panel *panel,
 
 static const struct drm_panel_funcs inx_500_v0_panel_funcs = {
 	.prepare = inx_500_v0_prepare,
+	.enable = inx_500_v0_enable,
 	.unprepare = inx_500_v0_unprepare,
 	.get_modes = inx_500_v0_get_modes,
 };
