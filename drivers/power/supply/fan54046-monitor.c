@@ -7,6 +7,7 @@
 #include <linux/mutex.h>
 #include <linux/pm_wakeup.h>
 #include <linux/pm.h>
+#include <linux/interrupt.h>
 
 static bool control_charging;
 module_param(control_charging, bool, 0444);
@@ -136,6 +137,7 @@ static void fan_poll(struct work_struct *work)
  struct fan_monitor *fan = container_of(to_delayed_work(work), struct fan_monitor, work);
  int online, status, ret;
  mutex_lock(&fan->pm_lock);
+ if (fan->suspended) { mutex_unlock(&fan->pm_lock); return; }
  ret = fan_read_status(fan, &online, &status);
  if (!ret) ret = fan_control(fan, online);
  if (ret) {
@@ -150,6 +152,14 @@ static void fan_poll(struct work_struct *work)
  schedule_delayed_work(&fan->work, msecs_to_jiffies(5000));
  mutex_unlock(&fan->pm_lock);
 }
+static irqreturn_t fan_irq(int irq, void *data)
+{
+ struct fan_monitor *fan = data;
+ /* I2C may still be suspended; resume/poll performs the actual status read. */
+ pm_wakeup_event(&fan->client->dev, 1000);
+ mod_delayed_work(system_wq, &fan->work, 0);
+ return IRQ_HANDLED;
+}
 static void fan_cancel(void *data)
 {
  struct fan_monitor *fan = data;
@@ -157,7 +167,8 @@ static void fan_cancel(void *data)
  if (control_charging) {
   fan5404x_temp_charging(&fan->charge, 0);
   if (fan->awake) pm_relax(fan->charge.dev);
-  device_init_wakeup(fan->charge.dev, false);
+  if (!(fan->client->flags & I2C_CLIENT_WAKE))
+   device_init_wakeup(fan->charge.dev, false);
  }
 }
 static char *fan_supplied_to[] = { "max170xx_battery" };
@@ -184,7 +195,7 @@ static int fan_probe(struct i2c_client *client)
  mutex_init(&fan->charge.read_write_lock);
  mutex_init(&fan->pm_lock);
  i2c_set_clientdata(client, fan);
- if (control_charging) {
+ if (control_charging && !(client->flags & I2C_CLIENT_WAKE)) {
   ret = device_init_wakeup(&client->dev, true);
   if (ret) return ret;
  }
@@ -192,12 +203,19 @@ static int fan_probe(struct i2c_client *client)
  cfg.supplied_to = fan_supplied_to; cfg.num_supplicants = ARRAY_SIZE(fan_supplied_to);
  fan->psy = devm_power_supply_register(&client->dev, &fan_desc, &cfg);
  if (IS_ERR(fan->psy)) {
-  if (control_charging) device_init_wakeup(&client->dev, false);
+  if (control_charging && !(client->flags & I2C_CLIENT_WAKE))
+   device_init_wakeup(&client->dev, false);
   return PTR_ERR(fan->psy);
  }
  INIT_DELAYED_WORK(&fan->work, fan_poll);
  ret = devm_add_action_or_reset(&client->dev, fan_cancel, fan);
  if (ret) return ret;
+ if (client->irq > 0) {
+  ret = devm_request_threaded_irq(&client->dev, client->irq, NULL, fan_irq,
+        IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+        "fan5404x-status", fan);
+  if (ret) return dev_err_probe(&client->dev, ret, "Status IRQ request failed\n");
+ }
  schedule_delayed_work(&fan->work, 0);
  dev_info(&client->dev, "FAN5404x ID %#x; Motorola charging control=%d\n", id, control_charging);
  return 0;

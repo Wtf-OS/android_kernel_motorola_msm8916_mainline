@@ -34,6 +34,7 @@ properties:
           - qcom,msm8998-silver-saw2-v4.1-l2
           - qcom,msm8909-saw2-v3.0-cpu
           - qcom,msm8916-saw2-v3.0-cpu
+          - qcom,msm8916-saw2-v3.0-l2-regulator
           - qcom,msm8939-saw2-v3.0-cpu
           - qcom,msm8226-saw2-v2.1-cpu
           - qcom,msm8226-saw2-v2.1-l2
@@ -50,8 +51,19 @@ properties:
   reg:
     items:
       - description: Base address and size of the SPM register region
-      - description: Base address and size of the alias register region
+      - description: Base address and size of the alias or memory ACC register region
     minItems: 1
+
+  power-domains:
+    maxItems: 1
+
+  required-opps:
+    maxItems: 1
+
+  qcom,mem-acc-high-value:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    enum: [256, 257]
+    description: Fuse-selected L1 memory ACC value for the high CPU corner
 
   regulator:
     $ref: /schemas/regulator/regulator.yaml#

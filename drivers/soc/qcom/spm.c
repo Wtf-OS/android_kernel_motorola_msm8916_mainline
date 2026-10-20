@@ -47,6 +47,7 @@ enum spm_reg {
 	SPM_REG_PMIC_DLY,
 	SPM_REG_PMIC_DATA_0,
 	SPM_REG_PMIC_DATA_1,
+	SPM_REG_PMIC_DATA_3,
 	SPM_REG_VCTL,
 	SPM_REG_SEQ_ENTRY,
 	SPM_REG_STS0,
@@ -77,14 +78,18 @@ struct spm_reg_data {
 	struct linear_range *range;
 	unsigned int ramp_delay;
 	unsigned int init_uV;
+	bool voltage_only;
 };
 
 struct spm_driver_data {
 	void __iomem *reg_base;
+	void __iomem *mem_acc;
+	u32 mem_acc_high;
 	const struct spm_reg_data *reg_data;
 	struct device *dev;
 	unsigned int volt_sel;
 	int reg_cpu;
+	int voltage_error;
 };
 
 static const u16 spm_reg_offset_v4_1[SPM_REG_NR] = {
@@ -156,6 +161,27 @@ static const struct spm_reg_data spm_reg_8939_cpu = {
 		0x50, 0x1B, 0x94, 0x5B, 0x80, 0x10, 0x26, 0x30, 0x50, 0x0F },
 	.start_index[PM_SLEEP_MODE_STBY] = 0,
 	.start_index[PM_SLEEP_MODE_SPC] = 5,
+};
+
+static void smp_set_vdd_v3_0(void *data);
+
+static const u16 spm_reg_offset_v3_0_voltage[SPM_REG_NR] = {
+	[SPM_REG_PMIC_STS] = 0x14,
+	[SPM_REG_RST] = 0x18,
+	[SPM_REG_VCTL] = 0x1c,
+	[SPM_REG_AVS_CTL] = 0x20,
+	[SPM_REG_PMIC_DATA_3] = 0x4c,
+};
+
+static struct linear_range spm_8916_regulator_range =
+	REGULATOR_LINEAR_RANGE(375000, 0, 78, 12500);
+
+static const struct spm_reg_data spm_reg_8916_l2_voltage = {
+	.reg_offset = spm_reg_offset_v3_0_voltage,
+	.set_vdd = smp_set_vdd_v3_0,
+	.range = &spm_8916_regulator_range,
+	.ramp_delay = 1200,
+	.voltage_only = true,
 };
 
 static const u16 spm_reg_offset_v2_3[SPM_REG_NR] = {
@@ -306,16 +332,26 @@ static int spm_set_voltage_sel(struct regulator_dev *rdev, unsigned int selector
 {
 	struct spm_driver_data *drv = rdev_get_drvdata(rdev);
 
-	drv->volt_sel = selector;
+	unsigned int previous = drv->volt_sel;
+	int ret;
 
+	drv->voltage_error = 0;
+	drv->volt_sel = selector;
 	/* Always do the SAW register writes on the corresponding CPU */
-	return smp_call_function_single(drv->reg_cpu, drv->reg_data->set_vdd, drv, true);
+	ret = smp_call_function_single(drv->reg_cpu, drv->reg_data->set_vdd, drv, true);
+	if (!ret)
+		ret = drv->voltage_error;
+	if (ret)
+		drv->volt_sel = previous;
+	return ret;
 }
 
 static int spm_get_voltage_sel(struct regulator_dev *rdev)
 {
 	struct spm_driver_data *drv = rdev_get_drvdata(rdev);
 
+	if (drv->reg_data->voltage_only)
+		return spm_register_read(drv, SPM_REG_PMIC_STS) & 0xff;
 	return drv->volt_sel;
 }
 
@@ -385,6 +421,51 @@ enable_avs:
 	}
 }
 
+static void smp_set_vdd_v3_0(void *data)
+{
+	struct spm_driver_data *drv = data;
+	u32 vctl, data3, status;
+	u32 selector = drv->volt_sel;
+	u32 acc = selector >= 70 ? drv->mem_acc_high : 0x100;
+
+	if (!(readl_relaxed(drv->reg_base + 0x04) & BIT(2))) {
+		drv->voltage_error = -ENODEV;
+		return;
+	}
+	/* Hardware AVS needs its own voltage plan; never fight it with fixed OPPs. */
+	if (spm_register_read(drv, SPM_REG_AVS_CTL) & BIT(0)) {
+		drv->voltage_error = -EOPNOTSUPP;
+		return;
+	}
+	/* Donor order: lower ACC before voltage; raise it after voltage settles. */
+	if (drv->mem_acc && selector < 70) {
+		writel((readl(drv->mem_acc) & ~0x1ff) | acc, drv->mem_acc);
+		readl(drv->mem_acc);
+	}
+	if ((spm_register_read(drv, SPM_REG_PMIC_STS) & 0xff) == selector)
+		goto update_acc;
+
+	vctl = spm_register_read(drv, SPM_REG_VCTL);
+	data3 = spm_register_read(drv, SPM_REG_PMIC_DATA_3);
+	vctl = (vctl & ~0x700ff) | selector;
+	data3 = (data3 & ~0x700ff) | selector;
+	spm_register_write(drv, SPM_REG_RST, 1);
+	spm_register_write(drv, SPM_REG_VCTL, vctl);
+	spm_register_write(drv, SPM_REG_PMIC_DATA_3, data3);
+	wmb();
+	drv->voltage_error = read_poll_timeout_atomic(spm_register_read, status,
+			(status & 0xff) == selector, 1, 200, false,
+			drv, SPM_REG_PMIC_STS);
+	if (drv->voltage_error)
+		dev_err_ratelimited(drv->dev, "SAW voltage timeout: requested %u, status %#x\n",
+				selector, status);
+update_acc:
+	if (!drv->voltage_error && drv->mem_acc && selector >= 70) {
+		writel((readl(drv->mem_acc) & ~0x1ff) | acc, drv->mem_acc);
+		readl(drv->mem_acc);
+	}
+}
+
 static int spm_get_cpu(struct device *dev)
 {
 	int cpu;
@@ -440,30 +521,29 @@ static int spm_register_regulator(struct device *dev, struct spm_driver_data *dr
 	rdesc->n_voltages = rdesc->linear_ranges[rdesc->n_linear_ranges - 1].max_sel + 1;
 	rdesc->ramp_delay = drv->reg_data->ramp_delay;
 
-	ret = spm_get_cpu(dev);
+	/* The MSM8916 L2 controller supplies the shared cluster, accessed on CPU0. */
+	ret = drv->reg_data->voltage_only ? 0 : spm_get_cpu(dev);
 	if (ret < 0)
 		return ret;
 
 	drv->reg_cpu = ret;
 	dev_dbg(dev, "SAW2 bound to CPU %d\n", drv->reg_cpu);
 
-	/*
-	 * Program initial voltage, otherwise registration will also try
-	 * setting the voltage, which might result in undervolting the CPU.
-	 */
-	drv->volt_sel = DIV_ROUND_UP(drv->reg_data->init_uV - rdesc->min_uV,
-				     rdesc->uV_step);
-	ret = linear_range_get_selector_high(drv->reg_data->range,
+	if (drv->reg_data->voltage_only) {
+		/* Preserve the bootloader's voltage and PSCI low-power programming. */
+		drv->volt_sel = spm_register_read(drv, SPM_REG_PMIC_STS) & 0xff;
+		if (drv->volt_sel > drv->reg_data->range->max_sel)
+			return -EINVAL;
+		dev_info(dev, "L2 SAW voltage selector %u, AVS %#x\n", drv->volt_sel,
+			 spm_register_read(drv, SPM_REG_AVS_CTL));
+	} else {
+		ret = linear_range_get_selector_high(drv->reg_data->range,
 					     drv->reg_data->init_uV,
-					     &drv->volt_sel,
-					     &found);
-	if (ret) {
-		dev_err(dev, "Initial uV value out of bounds\n");
-		return ret;
+					     &drv->volt_sel, &found);
+		if (ret)
+			return ret;
+		smp_call_function_single(drv->reg_cpu, drv->reg_data->set_vdd, drv, true);
 	}
-
-	/* Always do the SAW register writes on the corresponding CPU */
-	smp_call_function_single(drv->reg_cpu, drv->reg_data->set_vdd, drv, true);
 
 	rdev = devm_regulator_register(dev, rdesc, &config);
 	if (IS_ERR(rdev)) {
@@ -475,6 +555,8 @@ static int spm_register_regulator(struct device *dev, struct spm_driver_data *dr
 }
 
 static const struct of_device_id spm_match_table[] = {
+	{ .compatible = "qcom,msm8916-saw2-v3.0-l2-regulator",
+	  .data = &spm_reg_8916_l2_voltage },
 	{ .compatible = "qcom,sdm660-gold-saw2-v4.1-l2",
 	  .data = &spm_reg_660_gold_l2 },
 	{ .compatible = "qcom,sdm660-silver-saw2-v4.1-l2",
@@ -526,6 +608,19 @@ static int spm_dev_probe(struct platform_device *pdev)
 	drv->reg_data = match_id->data;
 	drv->dev = &pdev->dev;
 	platform_set_drvdata(pdev, drv);
+
+	if (drv->reg_data->voltage_only) {
+		if (platform_get_resource(pdev, IORESOURCE_MEM, 1)) {
+			drv->mem_acc = devm_platform_ioremap_resource(pdev, 1);
+			if (IS_ERR(drv->mem_acc))
+				return PTR_ERR(drv->mem_acc);
+			if (of_property_read_u32(pdev->dev.of_node,
+					"qcom,mem-acc-high-value", &drv->mem_acc_high) ||
+			    (drv->mem_acc_high != 0x100 && drv->mem_acc_high != 0x101))
+				return -EINVAL;
+		}
+		return spm_register_regulator(&pdev->dev, drv);
+	}
 
 	/* Write the SPM sequences first.. */
 	addr = drv->reg_base + drv->reg_data->reg_offset[SPM_REG_SEQ_ENTRY];

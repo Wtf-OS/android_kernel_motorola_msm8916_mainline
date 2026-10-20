@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "msm8916-motorola-osprey-camera-probe.dts"
+/ { model = "Motorola Moto G 2015 Android mainline"; };
+&mpss { status = "okay"; };
+
+&soc {
+	power-manager@b012000 {
+		compatible = "qcom,msm8916-saw2-v3.0-l2-regulator", "qcom,saw2";
+		reg = <0x0b012000 0x1000>, <0x01946000 0x4>;
+		/* This phone's raw fuse row 0 bit 52 is clear: use the normal ACC map. */
+		qcom,mem-acc-high-value = <0x101>;
+		power-domains = <&rpmpd RPMPD_VDDMX_AO>;
+		/* shortcut: hold active MX high until a bin-aware CPR driver handles votes. */
+		required-opps = <&rpmpd_opp_super_turbo>;
+		cpu_voltage: regulator {
+			regulator-name = "osprey-cpu";
+			regulator-min-microvolt = <1150000>;
+			regulator-max-microvolt = <1250000>;
+			regulator-always-on;
+		};
+	};
+};
+
+&cpu0 { cpu-supply = <&cpu_voltage>; };
+&cpu1 { cpu-supply = <&cpu_voltage>; };
+&cpu2 { cpu-supply = <&cpu_voltage>; };
+&cpu3 { cpu-supply = <&cpu_voltage>; };
+
+/* Open-loop voltage plan for the verified speed-bin-2 osprey. */
+&cpu_opp_table {
+	opp-200000000 { opp-microvolt = <1150000>; };
+	opp-400000000 { opp-microvolt = <1150000>; };
+	opp-800000000 { opp-microvolt = <1150000>; };
+	opp-998400000 { opp-microvolt = <1250000>; };
+	/* Open-loop high-corner voltage from this speed-bin-2 phone's donor CPR. */
+	opp-1209600000 {
+		opp-hz = /bits/ 64 <1209600000>;
+		opp-microvolt = <1250000>;
+	};
+};
+
+&venus { status = "okay"; };
+
+#include "msm8916-motorola-osprey-qdsp6-audio.dtsi"
+
+/* FAN54053 STAT wiring and both-edge trigger from Motorola's osprey tree. */
+&fan_charger {
+ interrupts-extended = <&tlmm 62 IRQ_TYPE_EDGE_BOTH>;
+ pinctrl-names = "default";
+ pinctrl-0 = <&fan_charger_irq_default>;
+ wakeup-source;
+};
+
+&tlmm {
+ fan_charger_irq_default: fan-charger-irq-default-state {
+  pins = "gpio62";
+  function = "gpio";
+  drive-strength = <2>;
+  bias-pull-up;
+ };
+};
+
+&blsp_i2c1 {
+ osprey_led_backlight: backlight@64 {
+  compatible = "rohm,bd65b60";
+  reg = <0x64>;
+ };
+};
+&mdss_dsi0 {
+ panel@0 { backlight = <&osprey_led_backlight>; };
+};

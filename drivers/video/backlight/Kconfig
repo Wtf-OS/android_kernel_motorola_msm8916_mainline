@@ -144,6 +144,13 @@ config BACKLIGHT_CLASS_DEVICE
 
 if BACKLIGHT_CLASS_DEVICE
 
+config BACKLIGHT_BD65B60
+    tristate "ROHM BD65B60 backlight"
+    depends on I2C
+    select REGMAP_I2C
+    help
+      Backlight LED driver used on Motorola Moto G 2015.
+
 config BACKLIGHT_ATMEL_LCDC
 	bool "Atmel LCDC Contrast-as-Backlight control"
 	depends on FB_ATMEL

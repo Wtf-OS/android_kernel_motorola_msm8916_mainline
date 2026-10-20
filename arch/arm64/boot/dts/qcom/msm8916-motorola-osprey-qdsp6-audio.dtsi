@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
+/* MPSS firmware owns LPASS; connect playback/capture through APR. */
+&apr { status = "okay"; };
+&lpass { status = "reserved"; };
+&sound {
+    compatible = "qcom,msm8916-qdsp6-sndcard";
+    model = "osprey-mainline-qdsp6";
+    /delete-node/ primary-dai-link;
+    /delete-node/ tertiary-dai-link;
+    frontend0-dai-link {
+        link-name = "MultiMedia1";
+        cpu { sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>; };
+    };
+    frontend1-dai-link {
+        link-name = "MultiMedia2";
+        cpu { sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>; };
+    };
+    backend0-dai-link {
+        link-name = "Primary MI2S";
+        cpu { sound-dai = <&q6afedai PRIMARY_MI2S_RX>; };
+        platform { sound-dai = <&q6routing>; };
+        codec { sound-dai = <&lpass_codec 0>, <&pm8916_codec 0>; };
+    };
+    backend1-dai-link {
+        link-name = "Tertiary MI2S";
+        cpu { sound-dai = <&q6afedai TERTIARY_MI2S_TX>; };
+        platform { sound-dai = <&q6routing>; };
+        codec { sound-dai = <&lpass_codec 1>, <&pm8916_codec 1>; };
+    };
+};

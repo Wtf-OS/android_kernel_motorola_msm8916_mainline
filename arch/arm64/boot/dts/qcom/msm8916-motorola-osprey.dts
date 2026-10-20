@@ -241,3 +241,10 @@
         sensor2-supply = <&pm8916_l17>;
     };
 };
+
+&pm8916_rpm_regulators {
+    pm8916_l17: l17 {
+        regulator-min-microvolt = <2850000>;
+        regulator-max-microvolt = <2850000>;
+    };
+};
