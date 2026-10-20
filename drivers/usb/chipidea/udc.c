@@ -16,6 +16,7 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
+#include <linux/pm_wakeup.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
@@ -1019,6 +1020,7 @@ static int _gadget_stop_activity(struct usb_gadget *gadget)
 	}
 
 	spin_lock_irqsave(&ci->lock, flags);
+	__pm_relax(ci->gadget_wakeup);
 	ci->gadget.speed = USB_SPEED_UNKNOWN;
 	ci->remote_wakeup = 0;
 	ci->suspended = 0;
@@ -2224,6 +2226,11 @@ static irqreturn_t udc_irq(struct ci_hdrc *ci)
 			isr_reset_handler(ci);
 
 		if (USBi_PCI & intr) {
+			/* Android autosuspend must wait for an idle USB bus. */
+			if (hw_read(ci, OP_PORTSC, PORTSC_CCS))
+				__pm_stay_awake(ci->gadget_wakeup);
+			else
+				__pm_relax(ci->gadget_wakeup);
 			ci->gadget.speed = hw_port_is_high_speed(ci) ?
 				USB_SPEED_HIGH : USB_SPEED_FULL;
 			if (ci->usb_phy)
@@ -2245,6 +2252,7 @@ static irqreturn_t udc_irq(struct ci_hdrc *ci)
 			isr_tr_complete_handler(ci);
 
 		if ((USBi_SLI & intr) && !(ci->suspended)) {
+			__pm_relax(ci->gadget_wakeup);
 			ci->suspended = 1;
 			ci->resume_state = ci->gadget.state;
 			if (ci->gadget.speed != USB_SPEED_UNKNOWN &&
@@ -2339,6 +2347,7 @@ void ci_hdrc_gadget_destroy(struct ci_hdrc *ci)
 		return;
 
 	usb_del_gadget_udc(&ci->gadget);
+	wakeup_source_unregister(ci->gadget_wakeup);
 
 	destroy_eps(ci);
 
@@ -2438,9 +2447,15 @@ int ci_hdrc_gadget_init(struct ci_hdrc *ci)
 	rdrv->irq	= udc_irq;
 	rdrv->name	= "gadget";
 
+	ci->gadget_wakeup = wakeup_source_register(ci->dev, "ci_hdrc-usb-active");
+	if (IS_ENABLED(CONFIG_PM_SLEEP) && !ci->gadget_wakeup)
+		return -ENOMEM;
+
 	ret = udc_start(ci);
 	if (!ret)
 		ci->roles[CI_ROLE_GADGET] = rdrv;
+	else
+		wakeup_source_unregister(ci->gadget_wakeup);
 
 	return ret;
 }

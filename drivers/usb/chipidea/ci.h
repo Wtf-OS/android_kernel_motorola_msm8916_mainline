@@ -182,6 +182,7 @@ struct hw_bank {
  * @qh_pool: allocation pool for queue heads
  * @td_pool: allocation pool for transfer descriptors
  * @gadget: device side representation for peripheral controller
+ * @gadget_wakeup: holds off autosuspend while the USB bus is active
  * @driver: gadget driver
  * @resume_state: save the state of gadget suspend from
  * @hw_ep_max: total number of endpoints supported by hardware
@@ -235,6 +236,7 @@ struct ci_hdrc {
 	struct dma_pool			*td_pool;
 
 	struct usb_gadget		gadget;
+	struct wakeup_source		*gadget_wakeup;
 	struct usb_gadget_driver	*driver;
 	enum usb_device_state		resume_state;
 	unsigned			hw_ep_max;
