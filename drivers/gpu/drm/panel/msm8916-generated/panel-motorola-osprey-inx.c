@@ -22,6 +22,7 @@ struct inx_500_v0 {
 	struct mipi_dsi_device *dsi;
 	struct regulator_bulk_data *supplies;
 	struct gpio_desc *reset_gpio;
+	struct backlight_device *led_backlight;
 	bool prepared;
 };
 
@@ -90,10 +91,18 @@ static int inx_500_v0_backlight_update(struct backlight_device *bl)
 	if (!ctx->prepared)
 		return 0;
 
+	if (!brightness) {
+		ret = backlight_disable(ctx->led_backlight);
+		if (ret < 0)
+			return ret;
+	}
+
 	/* Osprey uses one 8-bit DCS brightness byte, as in Motorola 3.10. */
 	ret = mipi_dsi_dcs_write(ctx->dsi, MIPI_DCS_SET_DISPLAY_BRIGHTNESS,
 				&brightness, sizeof(brightness));
-	return ret < 0 ? ret : 0;
+	if (ret < 0)
+		return ret;
+	return brightness ? backlight_enable(ctx->led_backlight) : 0;
 }
 
 static const struct backlight_ops inx_500_v0_backlight_ops = {
@@ -206,6 +215,12 @@ static int inx_500_v0_probe(struct mipi_dsi_device *dsi)
 	if (IS_ERR(ctx->reset_gpio))
 		return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
 				     "Failed to get reset-gpios\n");
+
+	ctx->led_backlight = devm_of_find_backlight(dev);
+	if (IS_ERR(ctx->led_backlight))
+		return dev_err_probe(dev, PTR_ERR(ctx->led_backlight), "LED backlight unavailable\n");
+	if (!ctx->led_backlight)
+		return dev_err_probe(dev, -ENODEV, "Missing LED backlight\n");
 
 	ctx->dsi = dsi;
 	mipi_dsi_set_drvdata(dsi, ctx);

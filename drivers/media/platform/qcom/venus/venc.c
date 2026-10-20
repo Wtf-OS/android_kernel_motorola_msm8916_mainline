@@ -525,6 +525,10 @@ static int venc_subscribe_event(struct v4l2_fh *fh,
 	}
 }
 
+static int venc_pm_get(struct venus_inst *inst);
+static int venc_pm_put(struct venus_inst *inst, bool autosuspend);
+static void venc_pm_touch(struct venus_inst *inst);
+
 static int
 venc_encoder_cmd(struct file *file, void *fh, struct v4l2_encoder_cmd *cmd)
 {
@@ -533,6 +537,10 @@ venc_encoder_cmd(struct file *file, void *fh, struct v4l2_encoder_cmd *cmd)
 	int ret = 0;
 
 	ret = v4l2_m2m_ioctl_try_encoder_cmd(file, fh, cmd);
+	if (ret)
+		return ret;
+
+	ret = venc_pm_get(inst);
 	if (ret)
 		return ret;
 
@@ -553,7 +561,8 @@ venc_encoder_cmd(struct file *file, void *fh, struct v4l2_encoder_cmd *cmd)
 
 		ret = hfi_session_process_buf(inst, &fdata);
 
-		inst->enc_state = VENUS_ENC_STATE_DRAIN;
+		if (!ret)
+			inst->enc_state = VENUS_ENC_STATE_DRAIN;
 	} else if (cmd->cmd == V4L2_ENC_CMD_START) {
 		if (inst->enc_state == VENUS_ENC_STATE_DRAIN) {
 			ret = -EBUSY;
@@ -567,6 +576,8 @@ venc_encoder_cmd(struct file *file, void *fh, struct v4l2_encoder_cmd *cmd)
 
 unlock:
 	mutex_unlock(&inst->lock);
+	venc_pm_touch(inst);
+	venc_pm_put(inst, true);
 	return ret;
 }
 
@@ -611,6 +622,8 @@ static int venc_pm_get(struct venus_inst *inst)
 	ret = pm_runtime_resume_and_get(dev);
 	mutex_unlock(&core->pm_lock);
 
+	if (ret < 0)
+		dev_err(core->dev, "encoder runtime resume failed: %d\n", ret);
 	return ret < 0 ? ret : 0;
 }
 
@@ -724,15 +737,18 @@ static int venc_set_properties(struct venus_inst *inst)
 		if (ret)
 			return ret;
 
-		ptype = HFI_PROPERTY_PARAM_VENC_H264_TRANSFORM_8X8;
-		h264_transform.enable_type = 0;
-		if (ctr->profile.h264 == V4L2_MPEG_VIDEO_H264_PROFILE_HIGH ||
-		    ctr->profile.h264 == V4L2_MPEG_VIDEO_H264_PROFILE_CONSTRAINED_HIGH)
-			h264_transform.enable_type = ctr->h264_8x8_transform;
+		/* The 8x8-transform property exists only in HFI 4.x/6.x. */
+		if (IS_V4(inst->core) || IS_V6(inst->core)) {
+			ptype = HFI_PROPERTY_PARAM_VENC_H264_TRANSFORM_8X8;
+			h264_transform.enable_type = 0;
+			if (ctr->profile.h264 == V4L2_MPEG_VIDEO_H264_PROFILE_HIGH ||
+			    ctr->profile.h264 == V4L2_MPEG_VIDEO_H264_PROFILE_CONSTRAINED_HIGH)
+				h264_transform.enable_type = ctr->h264_8x8_transform;
 
-		ret = hfi_session_set_property(inst, ptype, &h264_transform);
-		if (ret)
-			return ret;
+			ret = hfi_session_set_property(inst, ptype, &h264_transform);
+			if (ret)
+				return ret;
+		}
 
 		if (ctr->layer_bitrate) {
 			unsigned int i;
@@ -941,7 +957,7 @@ static int venc_set_properties(struct venus_inst *inst)
 
 	ptype = HFI_PROPERTY_PARAM_VENC_LTRMODE;
 	ltr_mode.ltr_count = ctr->ltr_count;
-	ltr_mode.ltr_mode = HFI_LTR_MODE_MANUAL;
+	ltr_mode.ltr_mode = ctr->ltr_count ? HFI_LTR_MODE_MANUAL : HFI_LTR_MODE_DISABLE;
 	ltr_mode.trust_mode = 1;
 	ret = hfi_session_set_property(inst, ptype, &ltr_mode);
 	if (ret)
@@ -1028,39 +1044,48 @@ static int venc_set_properties(struct venus_inst *inst)
 static int venc_init_session(struct venus_inst *inst)
 {
 	int ret;
+	const char *stage = "session init";
 
 	ret = venus_helper_session_init(inst);
 	if (ret == -EALREADY)
 		return 0;
-	else if (ret)
+	else if (ret) {
+		dev_err(inst->core->dev, "encoder session init failed: %d\n", ret);
 		return ret;
+	}
 
+	stage = "stride";
 	ret = venus_helper_set_stride(inst, inst->out_width,
 				      inst->out_height);
 	if (ret)
 		goto deinit;
 
+	stage = "input resolution";
 	ret = venus_helper_set_input_resolution(inst, inst->width,
 						inst->height);
 	if (ret)
 		goto deinit;
 
+	stage = "output resolution";
 	ret = venus_helper_set_output_resolution(inst, inst->width,
 						 inst->height,
 						 HFI_BUFFER_OUTPUT);
 	if (ret)
 		goto deinit;
 
+	stage = "color format";
 	ret = venus_helper_set_color_format(inst, inst->fmt_out->pixfmt);
 	if (ret)
 		goto deinit;
 
+	stage = "encoder properties";
 	ret = venc_set_properties(inst);
 	if (ret)
 		goto deinit;
 
 	return 0;
 deinit:
+	dev_err(inst->core->dev, "encoder %s failed: %d\n", stage, ret);
 	hfi_session_deinit(inst);
 	return ret;
 }
@@ -1337,13 +1362,32 @@ static void venc_vb2_buf_queue(struct vb2_buffer *vb)
 	mutex_unlock(&inst->lock);
 }
 
+static void venc_stop_streaming(struct vb2_queue *q)
+{
+	struct venus_inst *inst = vb2_get_drv_priv(q);
+
+	/* STREAMOFF may follow an idle source after runtime autosuspend. */
+	if (venc_pm_get(inst)) {
+		mutex_lock(&inst->lock);
+		inst->session_error = true;
+		venus_helper_vb2_queue_error(inst);
+		venus_helper_buffers_done(inst, q->type, VB2_BUF_STATE_ERROR);
+		mutex_unlock(&inst->lock);
+		return;
+	}
+
+	venus_helper_vb2_stop_streaming(q);
+	venc_pm_touch(inst);
+	venc_pm_put(inst, true);
+}
+
 static const struct vb2_ops venc_vb2_ops = {
 	.queue_setup = venc_queue_setup,
 	.buf_init = venc_buf_init,
 	.buf_cleanup = venc_buf_cleanup,
 	.buf_prepare = venus_helper_vb2_buf_prepare,
 	.start_streaming = venc_start_streaming,
-	.stop_streaming = venus_helper_vb2_stop_streaming,
+	.stop_streaming = venc_stop_streaming,
 	.buf_queue = venc_vb2_buf_queue,
 };
 

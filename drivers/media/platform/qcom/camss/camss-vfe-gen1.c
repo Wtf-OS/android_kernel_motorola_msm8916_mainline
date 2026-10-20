@@ -229,6 +229,10 @@ static int vfe_enable_output(struct vfe_line *line)
 	}
 
 	output->sequence = 0;
+	output->cadence_sof = output->cadence_done = 0;
+	output->cadence_same = output->cadence_missing = 0;
+	output->cadence_empty = output->cadence_restart = 0;
+	output->cadence_start_ns = 0;
 	output->gen1.wait_sof = 0;
 	output->wait_reg_update = 0;
 	reinit_completion(&output->sof);
@@ -527,6 +531,15 @@ static void vfe_isr_sof(struct vfe_device *vfe, enum vfe_line_id line_id)
 
 	spin_lock_irqsave(&vfe->output_lock, flags);
 	output = &vfe->line[line_id].output;
+	if (!output->cadence_sof)
+		output->cadence_start_ns = ktime_get_ns();
+	if (++output->cadence_sof % 120 == 0)
+		dev_info(vfe->camss->dev,
+			 "cadence line=%u sof=%u done=%u ms=%llu same=%u missing=%u empty=%u restart=%u state=%u\n",
+			 line_id, output->cadence_sof, output->cadence_done,
+			 (ktime_get_ns() - output->cadence_start_ns) / 1000000,
+			 output->cadence_same, output->cadence_missing,
+			 output->cadence_empty, output->cadence_restart, output->state);
 	if (output->gen1.wait_sof) {
 		output->gen1.wait_sof = 0;
 		complete(&output->sof);
@@ -558,6 +571,7 @@ static void vfe_isr_reg_update(struct vfe_device *vfe, enum vfe_line_id line_id)
 	}
 
 	if (output->state == VFE_OUTPUT_STOPPING) {
+		++output->cadence_restart;
 		/* Release last buffer when hw is idle */
 		if (output->last_buffer) {
 			vb2_buffer_done(&output->last_buffer->vb.vb2_buf,
@@ -627,6 +641,9 @@ static void vfe_isr_wm_done(struct vfe_device *vfe, u8 wm)
 	}
 	output = &vfe->line[vfe->wm_output_map[wm]].output;
 
+	++output->cadence_done;
+	if (output->gen1.active_buf == active_index)
+		++output->cadence_same;
 	if (output->gen1.active_buf == active_index && 0) {
 		dev_err_ratelimited(vfe->camss->dev,
 				    "Active buffer mismatch!\n");
@@ -636,6 +653,7 @@ static void vfe_isr_wm_done(struct vfe_device *vfe, u8 wm)
 
 	ready_buf = output->buf[!active_index];
 	if (!ready_buf) {
+		++output->cadence_missing;
 		dev_err_ratelimited(vfe->camss->dev,
 				    "Missing ready buf %d %d!\n",
 				    !active_index, output->state);
@@ -648,6 +666,7 @@ static void vfe_isr_wm_done(struct vfe_device *vfe, u8 wm)
 	/* Get next buffer */
 	output->buf[!active_index] = vfe_buf_get_pending(output);
 	if (!output->buf[!active_index]) {
+		++output->cadence_empty;
 		/* No next buffer - set same address */
 		new_addr = ready_buf->addr;
 		vfe_buf_update_wm_on_last(vfe, output);

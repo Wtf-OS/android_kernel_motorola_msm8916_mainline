@@ -186,6 +186,7 @@ struct s5k3m2 {
 	struct v4l2_ctrl *hflip;
 
 	const struct s5k3m2_mode *mode;
+	bool initialized;
 };
 
 
@@ -195,6 +196,112 @@ static const struct cci_reg_sequence s5k3m2_4208x3120_30fps_mode[] = {
 #include "s5k3m2-stock-mode.inc"
 };
 
+
+/* Stock 1920x1080 mode with a 16-pixel Bayer guard, same clocks. */
+static const struct cci_reg_sequence s5k3m2_stock_1936x1080[] = {
+	{ CCI_REG16(0x6028), 0x2000 },
+	{ CCI_REG16(0x602a), 0x14f0 },
+	{ CCI_REG16(0x6f12), 0x0000 },
+	{ CCI_REG16(0x6f12), 0x0001 },
+	{ CCI_REG16(0x6028), 0x4000 },
+	{ CCI_REG16(0x0344), 0x00ac },
+	{ CCI_REG16(0x0346), 0x01e0 },
+	{ CCI_REG16(0x0348), 0x0fd3 },
+	{ CCI_REG16(0x034a), 0x0a5f },
+	{ CCI_REG16(0x034c), 0x0790 },
+	{ CCI_REG16(0x034e), 0x0438 },
+	{ CCI_REG16(0x0900), 0x0112 },
+	{ CCI_REG16(0x0380), 0x0001 },
+	{ CCI_REG16(0x0382), 0x0001 },
+	{ CCI_REG16(0x0384), 0x0001 },
+	{ CCI_REG16(0x0386), 0x0003 },
+	{ CCI_REG16(0x0400), 0x0001 },
+	{ CCI_REG16(0x0404), 0x0020 },
+	{ CCI_REG16(0x0114), 0x0300 },
+	{ CCI_REG16(0x0110), 0x0002 },
+	{ CCI_REG16(0x112c), 0x0000 },
+	{ CCI_REG16(0x112e), 0x0000 },
+	{ CCI_REG16(0x0136), 0x17e1 },
+	{ CCI_REG16(0x0304), 0x0006 },
+	{ CCI_REG16(0x0306), 0x006f },
+	{ CCI_REG16(0x0302), 0x0001 },
+	{ CCI_REG16(0x0300), 0x0004 },
+	{ CCI_REG16(0x030c), 0x0003 },
+	{ CCI_REG16(0x030e), 0x0044 },
+	{ CCI_REG16(0x030a), 0x0001 },
+	{ CCI_REG16(0x0308), 0x0008 },
+	{ CCI_REG16(0x0342), 0x11f0 },
+	{ CCI_REG16(0x0340), 0x0642 },
+	{ CCI_REG16(0x0202), 0x0200 },
+	{ CCI_REG16(0x0200), 0x0400 },
+	{ CCI_REG16(0x0b04), 0x0101 },
+	{ CCI_REG16(0x0b08), 0x0000 },
+	{ CCI_REG16(0x602a), 0x3058 },
+	{ CCI_REG16(0x6f12), 0x0800 },
+	{ CCI_REG16(0x0b00), 0x0007 },
+	{ CCI_REG16(0x3b3c), 0x0107 },
+	{ CCI_REG16(0x3b34), 0x3030 },
+	{ CCI_REG16(0x3b36), 0x3030 },
+	{ CCI_REG16(0x3b38), 0x3030 },
+	{ CCI_REG16(0x3b3a), 0x3030 },
+	{ CCI_REG16(0x306a), 0x0068 },
+	{ CCI_REG16(0x602a), 0x0216 },
+	{ CCI_REG16(0x6f12), 0x0000 },
+	{ CCI_REG16(0x70dc), 0x0000 },
+};
+
+/* Stock 1280x720 mode with a 16-pixel Bayer guard, same clocks. */
+static const struct cci_reg_sequence s5k3m2_stock_1296x720[] = {
+	{ CCI_REG16(0x6028), 0x2000 },
+	{ CCI_REG16(0x602a), 0x14f0 },
+	{ CCI_REG16(0x6f12), 0x0000 },
+	{ CCI_REG16(0x6f12), 0x0001 },
+	{ CCI_REG16(0x6028), 0x4000 },
+	{ CCI_REG16(0x0344), 0x00a4 },
+	{ CCI_REG16(0x0346), 0x01dc },
+	{ CCI_REG16(0x0348), 0x0fdb },
+	{ CCI_REG16(0x034a), 0x0a63 },
+	{ CCI_REG16(0x034c), 0x0510 },
+	{ CCI_REG16(0x034e), 0x02d0 },
+	{ CCI_REG16(0x0900), 0x0113 },
+	{ CCI_REG16(0x0380), 0x0001 },
+	{ CCI_REG16(0x0382), 0x0001 },
+	{ CCI_REG16(0x0384), 0x0001 },
+	{ CCI_REG16(0x0386), 0x0005 },
+	{ CCI_REG16(0x0400), 0x0001 },
+	{ CCI_REG16(0x0404), 0x0030 },
+	{ CCI_REG16(0x0114), 0x0300 },
+	{ CCI_REG16(0x0110), 0x0002 },
+	{ CCI_REG16(0x112c), 0x0000 },
+	{ CCI_REG16(0x112e), 0x0000 },
+	{ CCI_REG16(0x0136), 0x17e1 },
+	{ CCI_REG16(0x0304), 0x0006 },
+	{ CCI_REG16(0x0306), 0x006f },
+	{ CCI_REG16(0x0302), 0x0001 },
+	{ CCI_REG16(0x0300), 0x0004 },
+	{ CCI_REG16(0x030c), 0x0003 },
+	{ CCI_REG16(0x030e), 0x0044 },
+	{ CCI_REG16(0x030a), 0x0001 },
+	{ CCI_REG16(0x0308), 0x0008 },
+	{ CCI_REG16(0x0342), 0x11f0 },
+	{ CCI_REG16(0x0340), 0x0321 },
+	{ CCI_REG16(0x0202), 0x0200 },
+	{ CCI_REG16(0x0200), 0x0400 },
+	{ CCI_REG16(0x0b04), 0x0101 },
+	{ CCI_REG16(0x0b08), 0x0000 },
+	{ CCI_REG16(0x602a), 0x3058 },
+	{ CCI_REG16(0x6f12), 0x0800 },
+	{ CCI_REG16(0x0b00), 0x0007 },
+	{ CCI_REG16(0x3b3c), 0x0107 },
+	{ CCI_REG16(0x3b34), 0x3030 },
+	{ CCI_REG16(0x3b36), 0x3030 },
+	{ CCI_REG16(0x3b38), 0x3030 },
+	{ CCI_REG16(0x3b3a), 0x3030 },
+	{ CCI_REG16(0x306a), 0x0068 },
+	{ CCI_REG16(0x602a), 0x0216 },
+	{ CCI_REG16(0x6f12), 0x0000 },
+	{ CCI_REG16(0x70dc), 0x0000 },
+};
 
 static const struct s5k3m2_mode s5k3m2_supported_modes[] = {
 	{
@@ -220,6 +327,28 @@ static const struct s5k3m2_mode s5k3m2_supported_modes[] = {
 		.reg_list = {
 			.regs = s5k3m2_stock_1280x720,
 			.num_regs = ARRAY_SIZE(s5k3m2_stock_1280x720),
+		},
+	},
+	{
+		.width = 1936,
+		.height = 1080,
+		.hts = 0x11f0,
+		.vts = 0x0c76,
+		.exposure = 256,
+		.reg_list = {
+			.regs = s5k3m2_stock_1936x1080,
+			.num_regs = ARRAY_SIZE(s5k3m2_stock_1936x1080),
+		},
+	},
+	{
+		.width = 1296,
+		.height = 720,
+		.hts = 0x11f0,
+		.vts = 0x0c76,
+		.exposure = 256,
+		.reg_list = {
+			.regs = s5k3m2_stock_1296x720,
+			.num_regs = ARRAY_SIZE(s5k3m2_stock_1296x720),
 		},
 	},
 };
@@ -382,13 +511,16 @@ static int s5k3m2_enable_streams(struct v4l2_subdev *sd,
 	if (ret)
 		return ret;
 
-	/* Sensor init settings */
-	cci_multi_reg_write(s5k3m2->regmap, s5k3m2_stock_init,
-			    ARRAY_SIZE(s5k3m2_stock_init), &ret);
-	if (ret)
-		goto error;
-	/* Stock init descriptor requests 10 ms settling. */
-	msleep(10);
+	/* Firmware survives stream-off but not the reset in power_off(). */
+	if (!s5k3m2->initialized) {
+		cci_multi_reg_write(s5k3m2->regmap, s5k3m2_stock_init,
+				    ARRAY_SIZE(s5k3m2_stock_init), &ret);
+		if (ret)
+			goto error;
+		/* Stock init descriptor requests 10 ms settling. */
+		msleep(10);
+		s5k3m2->initialized = true;
+	}
 	cci_multi_reg_write(s5k3m2->regmap, reg_list->regs,
 			    reg_list->num_regs, &ret);
 	if (ret)
@@ -410,6 +542,7 @@ static int s5k3m2_enable_streams(struct v4l2_subdev *sd,
 	return 0;
 
 error:
+	s5k3m2->initialized = false;
 	dev_err(s5k3m2->dev, "failed to start streaming: %d\n", ret);
 	pm_runtime_put_autosuspend(s5k3m2->dev);
 
@@ -424,8 +557,10 @@ static int s5k3m2_disable_streams(struct v4l2_subdev *sd,
 	int ret;
 
 	ret = cci_write(s5k3m2->regmap, S5K3M2_REG_CTRL_MODE, 0, NULL);
-	if (ret)
+	if (ret) {
+		s5k3m2->initialized = false;
 		dev_err(s5k3m2->dev, "failed to stop streaming: %d\n", ret);
+	}
 
 	pm_runtime_put_autosuspend(s5k3m2->dev);
 
@@ -476,7 +611,7 @@ static int s5k3m2_set_pad_format(struct v4l2_subdev *sd,
 
 	s5k3m2->mode = mode;
 
-	/* Update limits and set FPS and exposure to default values */
+	/* Update limits and reset the frame duration. */
 	hblank = mode->hts - mode->width;
 	__v4l2_ctrl_modify_range(s5k3m2->hblank, hblank, hblank, 1, hblank);
 
@@ -489,7 +624,7 @@ static int s5k3m2_set_pad_format(struct v4l2_subdev *sd,
 	__v4l2_ctrl_modify_range(s5k3m2->exposure, S5K3M2_EXPOSURE_MIN,
 				 exposure_max, S5K3M2_EXPOSURE_STEP,
 				 mode->exposure);
-	__v4l2_ctrl_s_ctrl(s5k3m2->exposure, mode->exposure);
+	/* Keep metered exposure across preview/still modes; range update clamps it. */
 
 	if (s5k3m2->sd.ctrl_handler->error)
 		return s5k3m2->sd.ctrl_handler->error;
@@ -547,12 +682,26 @@ static int s5k3m2_get_selection(struct v4l2_subdev *sd,
 		return -EINVAL;
 
 	switch (sel->target) {
-	case V4L2_SEL_TGT_CROP:
 	case V4L2_SEL_TGT_CROP_BOUNDS:
-		sel->r.left = 0;
-		sel->r.top = 0;
-		sel->r.width = s5k3m2->mode->width;
-		sel->r.height = s5k3m2->mode->height;
+	case V4L2_SEL_TGT_CROP_DEFAULT:
+		sel->r = (struct v4l2_rect) { 0, 0, 4160, 3120 };
+		return 0;
+	case V4L2_SEL_TGT_CROP:
+		/* Effective stock-mode ROI, relative to the usable full-resolution array. */
+		switch (s5k3m2->mode->width) {
+		case 1280:
+			sel->r = (struct v4l2_rect) { 160, 480, 3840, 2160 };
+			break;
+		case 1296:
+			sel->r = (struct v4l2_rect) { 136, 480, 3888, 2160 };
+			break;
+		case 1936:
+			sel->r = (struct v4l2_rect) { 144, 480, 3872, 2160 };
+			break;
+		default:
+			sel->r = (struct v4l2_rect) { 0, 0, 4160, 3120 };
+			break;
+		}
 		return 0;
 	default:
 		return -EINVAL;
@@ -715,6 +864,8 @@ static int s5k3m2_power_off(struct device *dev)
 {
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct s5k3m2 *s5k3m2 = to_s5k3m2(sd);
+
+	s5k3m2->initialized = false;
 
 	gpiod_set_value_cansleep(s5k3m2->reset_gpio, 1);
 	usleep_range(1000, 1500);

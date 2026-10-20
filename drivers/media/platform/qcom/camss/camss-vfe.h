@@ -77,6 +77,9 @@ struct vfe_output {
 	};
 	enum vfe_output_state state;
 	unsigned int sequence;
+	u32 cadence_sof, cadence_done, cadence_same, cadence_missing;
+	u32 cadence_empty, cadence_restart;
+	u64 cadence_start_ns;
 
 	int wait_reg_update;
 	struct completion sof;

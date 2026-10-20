@@ -80,6 +80,23 @@ struct drm_gem_object *msm_gem_prime_import(struct drm_device *dev,
 	return drm_gem_prime_import(dev, buf);
 }
 
+struct drm_gem_object *msm_gem_prime_import_cached(struct drm_device *dev,
+					       struct dma_buf *buf)
+{
+	if (buf->ops == &msm_gem_prime_dmabuf_ops) {
+		struct drm_gem_object *obj = buf->priv;
+
+		if (obj->dev == dev &&
+		    (to_msm_bo(obj)->flags & MSM_BO_CACHE_MASK) == MSM_BO_CACHED) {
+			drm_gem_object_get(obj);
+			return obj;
+		}
+	}
+
+	/* shortcut: Keep legacy WC imports until shared GPU mapping lifetimes are fixed. */
+	return drm_gem_prime_import(dev, buf);
+}
+
 struct drm_gem_object *msm_gem_prime_import_sg_table(struct drm_device *dev,
 		struct dma_buf_attachment *attach, struct sg_table *sg)
 {

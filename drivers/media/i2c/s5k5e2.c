@@ -648,18 +648,17 @@ static int s5k5e2_get_selection(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
-	struct s5k5e2 *s5k5e2 = to_s5k5e2(sd);
-
 	if (sel->which != V4L2_SUBDEV_FORMAT_ACTIVE)
 		return -EINVAL;
 
 	switch (sel->target) {
-	case V4L2_SEL_TGT_CROP:
 	case V4L2_SEL_TGT_CROP_BOUNDS:
-		sel->r.left = 0;
-		sel->r.top = 0;
-		sel->r.width = s5k5e2->mode->width;
-		sel->r.height = s5k5e2->mode->height;
+	case V4L2_SEL_TGT_CROP_DEFAULT:
+		sel->r = (struct v4l2_rect) { 0, 0, 2560, 1920 };
+		return 0;
+	case V4L2_SEL_TGT_CROP:
+		/* Both stock front modes cover the same array; one is 2x binned. */
+		sel->r = (struct v4l2_rect) { 0, 0, 2560, 1920 };
 		return 0;
 	default:
 		return -EINVAL;
